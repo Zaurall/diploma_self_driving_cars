@@ -37,6 +37,9 @@ python tinyphysics.py --model_path ./models/tinyphysics.onnx --data_path ./data 
 # generate a report comparing two controllers
 python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data --num_segs 100 --test_controller pid --baseline_controller zero
 
+python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/test --test_controller lstm_controller --baseline_controller pid
+python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/AUDI_A3_3RD_GEN --test_controller lstm_controller --baseline_controller pid
+python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/test --test_controller vanilla_lstm --baseline_controller pid
 ```
 You can also use the notebook at [`experiment.ipynb`](https://github.com/commaai/controls_challenge/blob/master/experiment.ipynb) for exploration.
 
