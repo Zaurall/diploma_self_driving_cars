@@ -40,6 +40,9 @@ python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data --num_s
 python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/test --test_controller lstm_controller --baseline_controller pid
 python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/AUDI_A3_3RD_GEN --test_controller lstm_controller --baseline_controller pid
 python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/test --test_controller vanilla_lstm --baseline_controller pid
+python eval.py --model_path ./models/tinyphysics.onnx --data_path ./data/test --test_controller vanilla_lstm --baseline_controller pid
+nurislam/diploma_self_driving_cars/models/base_v1_full_dataset_10_epochs/lstm_best_model.pt
+nurislam/diploma_self_driving_cars/models/base_v1_full_dataset_10_epochs/lstm_best_model_6280885.pt
 ```
 You can also use the notebook at [`experiment.ipynb`](https://github.com/commaai/controls_challenge/blob/master/experiment.ipynb) for exploration.
 

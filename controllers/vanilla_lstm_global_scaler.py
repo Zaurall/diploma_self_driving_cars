@@ -27,15 +27,13 @@ class LstmEncoderDecoder(nn.Module):
         decoder_input = input_control_sequence if output_control_sequence is None else output_control_sequence
         
         decoder_output, _ = self.decoder(decoder_input, (hidden_enc, cell_enc))
-        output = self.fc_out(decoder_output)
-        
-        return output
+        return self.fc_out(decoder_output)
 
 class Controller(BaseController):
     """
     LSTM-based controller using the pretrained model
     """
-    def __init__(self, model_path="../models/lstm_v3_1000-dataset_lr-3_epochs-20_seq-len-100_local-scaler_steer-filtered_2_256/lstm_best_model.pt", scaler_path="../models/lstm_v3_1000-dataset_lr-3_epochs-20_seq-len-100_local-scaler_steer-filtered_2_256/scalers.pkl"):
+    def __init__(self, model_path="../models/lstm_v3_1000-dataset_lr-3_epochs-20_seq-len-100_global-scaler/lstm_best_model.pt", scaler_path="../models/lstm_v3_1000-dataset_lr-3_epochs-20_seq-len-100_global-scaler/scalers.pkl"):
         # model_path = "../models/base_v1_full_dataset_10_epochs/lstm_best_model.pt"
         # model_path = "../models/base_v1_full_dataset_10_epochs/lstm_best_model_2_epochs_6280885_test-.pt"
         self.seq_len = 20
@@ -49,13 +47,13 @@ class Controller(BaseController):
         self.model = LstmEncoderDecoder(
             physics_input_size=3,
             control_input_size=2,
-            hidden_size=256,
-            num_layers=2
+            hidden_size=128,
+            num_layers=4
         ).to(self.device)
         
         # Check if model path is absolute or relative
-        model_abs_path = os.path.join(os.path.dirname(__file__), model_path) if not os.path.isabs(model_path) else model_path
-        scaler_abs_path = os.path.join(os.path.dirname(__file__), scaler_path) if not os.path.isabs(scaler_path) else scaler_path
+        model_abs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), model_path))
+        scaler_abs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), scaler_path))
         
         self.model.load_state_dict(torch.load(model_abs_path, map_location=self.device))
         self.model.eval()
@@ -64,55 +62,38 @@ class Controller(BaseController):
         with open(scaler_abs_path, 'rb') as f:
             self.scalers = pickle.load(f)
             
-        # Assume we also have a steerCommand scaler from the first 100 steps
-        self.steer_scaler = None
-        self.first_100_steers = []
+        required_scalers = ['roll', 'aEgo', 'vEgo', 'targetLateralAcceleration', 'steerCommand']            
+        for scaler in required_scalers:            
+            if scaler not in self.scalers:            
+                raise ValueError(f"Missing required scaler: {scaler}")
 
     def preprocess_inputs(self, roll, a_ego, v_ego, target_lataccel, steer_command):
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, 
-                               message="X does not have valid feature names")
+            warnings.filterwarnings("ignore", category=UserWarning)
             
-            # Scale the inputs using the same scalers as during training
-            roll_scaled = self.scalers['roll'].transform([[roll]])[0][0]
-            a_ego_scaled = self.scalers['aEgo'].transform([[a_ego]])[0][0]
-            v_ego_scaled = self.scalers['vEgo'].transform([[v_ego]])[0][0]
-            target_lataccel_scaled = self.scalers['targetLateralAcceleration'].transform([[target_lataccel]])[0][0]
+            scaled_values = [            
+                self.scalers['roll'].transform([[roll]])[0][0],            
+                self.scalers['aEgo'].transform([[a_ego]])[0][0],            
+                self.scalers['vEgo'].transform([[v_ego]])[0][0],            
+                self.scalers['targetLateralAcceleration'].transform([[target_lataccel]])[0][0],            
+                self.scalers['steerCommand'].transform([[steer_command]])[0][0]            
+            ]
             
-            # For steerCommand, use stored scaler or collect values for the first 100 steps
-            if self.steer_scaler is not None:
-                steer_command_scaled = self.steer_scaler.transform([[steer_command]])[0][0]
-            else:
-                # During initial phase, collect values and use raw
-                if len(self.first_100_steers) < 100:
-                    self.first_100_steers.append(steer_command)
-                steer_command_scaled = steer_command
-                
-                # When we have 100 values, create the scaler
-                if len(self.first_100_steers) == 100:
-                    from sklearn.preprocessing import RobustScaler
-                    self.steer_scaler = RobustScaler()
-                    self.steer_scaler.fit(np.array(self.first_100_steers).reshape(-1, 1))
-                    
-                    # Rescale all stored values
-                    for i in range(len(self.control_history)):
-                        self.control_history[i][1] = self.steer_scaler.transform([[self.control_history[i][1]]])[0][0]
-                    
-                    # Also scale the current command
-                    steer_command_scaled = self.steer_scaler.transform([[steer_command]])[0][0]
-            
-            return roll_scaled, a_ego_scaled, v_ego_scaled, target_lataccel_scaled, steer_command_scaled
+            return tuple(scaled_values)
 
     def update(self, target_lataccel, current_lataccel, state, future_plan):
         # Extract state variables
         roll = state.roll_lataccel
         a_ego = state.a_ego  
         v_ego = state.v_ego
-        
-        # Preprocess inputs
-        roll_scaled, a_ego_scaled, v_ego_scaled, target_lataccel_scaled, steer_command_scaled = self.preprocess_inputs(
-            roll, a_ego, v_ego, target_lataccel, 0.0  # Use 0 as initial steer_command
+
+
+        current_steer = 0.0 if not self.control_history else self.control_history[-1][1]
+        scaled_inputs = self.preprocess_inputs(
+            roll, a_ego, v_ego, target_lataccel, current_steer
         )
+        roll_scaled, a_ego_scaled, v_ego_scaled, target_lataccel_scaled, steer_command_scaled = scaled_inputs
+        
         
         # Update history buffers
         self.physics_history.append([roll_scaled, a_ego_scaled, v_ego_scaled])
@@ -136,10 +117,8 @@ class Controller(BaseController):
         # Get prediction from model
         with torch.no_grad():
             output = self.model(physics_input, control_input)
-            prediction = output[0, -1, 0].cpu().item()  # Last timestep prediction
+            prediction_scaled = output[0, -1, 0].cpu().item()  # Last timestep prediction
         
-        # Convert the prediction back to the original scale
-        if self.steer_scaler is not None:
-            prediction = self.steer_scaler.inverse_transform([[prediction]])[0][0]    
-
+        prediction = self.scalers['steerCommand'].inverse_transform([[prediction_scaled]])[0][0]
+            
         return prediction
