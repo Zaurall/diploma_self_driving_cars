@@ -1,0 +1,60 @@
+# ===============================
+# CONFIGURATION FILE
+# ===============================
+
+seed: 42
+
+data:
+  path: "../data/train"
+  platforms:
+    - "CHEVROLET_VOLT_PREMIER_2017"
+  seq_len: 100
+  future_k: 0              # number of future target points by default 20
+  scaler_type: "local-scaler"   # options: "local-scaler" or "global-scaler"
+  scalers_fit_sample_size: 5000
+  batch_size: 64
+  num_workers: 4
+  train_frac: 0.8
+  mode: "sequence"         # "sequence" or "single-step"
+
+  # 🧠 Data schema
+  features: ["roll", "aEgo", "vEgo", "latAccelSteeringAngle"]
+  target_column: "steerFiltered" # "steerFiltered" or "
+  rename_columns:
+    latAccelSteeringAngle: "targetLateralAcceleration"
+    steerFiltered: "steerCommand"
+
+model:
+  lstm:
+    type: "LSTM"
+    hidden_size: 256
+    num_layers: 2
+    dropout: 0.2
+
+optimizer:
+  adam: 
+    amsgrad: False # True or False
+  sgd: 
+    momentum: 0.9 # from 0 to 1
+    nesterov: True # True or False
+    dampening: 0 # from 0 to 1
+  rmsprop: 
+    alpha: 0.99 # from 0 to 1
+    momentum: 0 # from 0 to 1
+    centered: False # True or False
+  adamw:
+    amsgrad: False # True or False
+
+
+train:
+  num_epochs: 20
+  learning_rate: 0.0001
+  weight_decay: 0.0
+
+meta:
+  model_version: 5
+  model_type: "lstm"
+  optimizer: "adam"
+  scaler_type: "local-scaler" # "local-scaler" or "global-scaler"
+  number_trials: 10 # Set to 1 for single run, >1 for Optuna optimization
+  

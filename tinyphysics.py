@@ -115,6 +115,9 @@ class TinyPhysicsSimulator:
     self.current_lataccel = self.current_lataccel_history[-1]
     seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
     np.random.seed(seed)
+    if self.controller.__class__.__module__ == 'controllers.mpc' or self.controller.__class__.__module__ == 'controllers.ff':
+      self.controller.reset(self.state_history, self.current_lataccel_history, self.action_history,self.target_lataccel_history)
+    
 
   def get_data(self, data_path: str) -> pd.DataFrame:
     df = pd.read_csv(data_path)
@@ -142,7 +145,10 @@ class TinyPhysicsSimulator:
     self.current_lataccel_history.append(self.current_lataccel)
 
   def control_step(self, step_idx: int) -> None:
-    action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], future_plan=self.futureplan)
+    if self.controller.__class__.__module__ == 'controllers.mpc' or self.controller.__class__.__module__ == 'controllers.gainscheduler' or self.controller.__class__.__module__ == 'controllers.ppo.ff' or self.controller.__class__.__module__ == 'controllers.ppo.transformer' or self.controller.__class__.__module__ == 'controllers.ppo.ff_modular':
+      action= self.controller.update(self.target_lataccel_history, self.current_lataccel_history, self.state_history, self.action_history, future_plan=self.futureplan)
+    else:
+      action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], future_plan=self.futureplan)
     if step_idx < CONTROL_START_IDX:
       action = self.data['steer_command'].values[step_idx]
     action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
@@ -211,12 +217,35 @@ class TinyPhysicsSimulator:
 
 
 def get_available_controllers():
-  return [f.stem for f in Path('controllers').iterdir() if f.is_file() and f.suffix == '.py' and f.stem != '__init__']
+  # return [f.stem for f in Path('controllers').iterdir() if f.is_file() and f.suffix == '.py' and f.stem != '__init__']
+  controllers = []
+  controllers_path = Path('controllers')
+  
+  # Get controllers directly in controllers folder
+  for f in controllers_path.iterdir():
+    if f.is_file() and f.suffix == '.py' and f.stem != '__init__':
+      controllers.append(f.stem)
+  
+  # Get controllers in subdirectories (e.g., ppo/ppo_controller_ff)
+  for subdir in controllers_path.iterdir():
+    if subdir.is_dir() and not subdir.name.startswith('__'):
+      for f in subdir.rglob('*.py'):
+        if f.stem != '__init__':
+          # Create path like 'ppo/ppo_controller_ff'
+          relative_path = f.relative_to(controllers_path)
+          controller_name = str(relative_path.with_suffix('')).replace('\\', '/')
+          controllers.append(controller_name)
+  
+  return controllers
 
 
 def run_rollout(data_path, controller_type, model_path, debug=False):
   tinyphysicsmodel = TinyPhysicsModel(model_path, debug=debug)
-  controller = importlib.import_module(f'controllers.{controller_type}').Controller()
+  module_path = f"controllers.{controller_type.replace('/', '.')}"
+  if controller_type =='mpc' or controller_type == 'ff' or controller_type == 'gainscheduler':
+    controller = importlib.import_module(module_path).Controller(tinyphysicsmodel)
+  else:
+    controller = importlib.import_module(module_path).Controller()
   sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_path), controller=controller, debug=debug)
   return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
