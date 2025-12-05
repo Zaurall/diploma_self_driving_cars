@@ -27,6 +27,9 @@ pip install -r requirements.txt
 
 # test this works
 python tinyphysics.py --model_path ./models/tinyphysics.onnx --data_path ./data/00000.csv --debug --controller pid 
+
+
+.\venv\Scripts\activate
 ```
 
 There are some other scripts to help you get aggregate metrics: 

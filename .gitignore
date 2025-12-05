@@ -5,4 +5,4 @@ models/tinyphysics_*.onnx
 *.swp
 models/
 .ipynb_checkpoints
-
+venv
