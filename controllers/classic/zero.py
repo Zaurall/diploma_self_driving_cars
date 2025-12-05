@@ -1,4 +1,4 @@
-from . import BaseController
+from controllers import BaseController
 
 
 class Controller(BaseController):

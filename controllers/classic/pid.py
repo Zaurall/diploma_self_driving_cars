@@ -1,4 +1,4 @@
-from . import BaseController
+from controllers import BaseController
 import numpy as np
 
 class Controller(BaseController):
